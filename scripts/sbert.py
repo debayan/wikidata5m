@@ -14,12 +14,6 @@ def read_sentences_from_jsonlines(jsonlines_file):
             entities.append(entity)
             sentences.append(sentence)
     return entities,sentences
-# Custom JSON encoder to handle float32 data type
-class NumPyJSONEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, np.float32):
-            return float(obj)
-        return super().default(obj)
 
 def compute_sbert_embeddings(entities,sentences,f, batch_size=32):
     # Load the Sentence-BERT model (pre-trained on NLI and STS benchmark datasets)
@@ -36,8 +30,8 @@ def compute_sbert_embeddings(entities,sentences,f, batch_size=32):
         batch_entities = entities[start_idx:end_idx]
         batch_embeddings = sbert_model.encode(batch_sentences)
         for ent,emb in zip(batch_entities, batch_embeddings):
-            reduced_precision_array = np.round(emb, decimals=2)
-            f.write(json.dumps({'entity':ent, 'embedding':reduced_precision_array.tolist()},cls=NumPyJSONEncoder)+'\n')
+            reduced_precision_array = np.round(emb.astype(np.float64), decimals=2)
+            f.write(json.dumps({'entity':ent, 'embedding':reduced_precision_array.tolist()})+'\n')
     return 
 
 if __name__ == "__main__":
@@ -46,7 +40,7 @@ if __name__ == "__main__":
     entities,sentences = read_sentences_from_jsonlines(jsonlines_file)
     f = open('sbert_embeddings.jsonlines','w')
     # Specify the desired batch size
-    batch_size = 32
+    batch_size = 3200
     print("computing embeddings with batch size %d"%(batch_size))
     compute_sbert_embeddings(entities,sentences,f, batch_size=batch_size)
     f.close()
