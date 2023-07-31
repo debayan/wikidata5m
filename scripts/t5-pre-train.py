@@ -1,6 +1,10 @@
-import torch
+import torch,sys
 from torch.utils.data import Dataset, DataLoader, random_split
 from transformers import T5Tokenizer, T5ForConditionalGeneration, T5Config, AdamW
+import wandb
+
+#wandb.init(project="human_friendly_kg_embeddings",mode="disabled")
+wandb.init(project="human_friendly_kg_embeddings")
 
 # Define the paths to input and label files
 label_file_path = '../data/pre-train-data.txt'
@@ -49,7 +53,7 @@ class CustomDataset(Dataset):
         }
 
 # Define the T5 model and tokenizer
-model_name = 't5-base'
+model_name = sys.argv[1] # t5-small t5-base etc
 tokenizer = T5Tokenizer.from_pretrained(model_name)
 model = T5ForConditionalGeneration.from_pretrained(model_name)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -71,7 +75,7 @@ optimizer = AdamW(model.parameters(), lr=1e-4)
 
 # Fine-tuning the model
 num_epochs = 3
-print_step = 100
+print_step = 1000
 for epoch in range(num_epochs):
     model.train()
     total_train_loss = 0
@@ -91,6 +95,7 @@ for epoch in range(num_epochs):
 
         if step % print_step == 0:
             print(f"Epoch: {epoch + 1}, Step: {step}, Loss: {loss.item()}")
+            wandb.log({"Average Train Loss": loss.item(),  "step": step})
 
         if step % print_step  == 0 and step > 2:
             model.eval()
@@ -104,28 +109,28 @@ for epoch in range(num_epochs):
                     outputs = model(input_ids, attention_mask=attention_mask, labels=labels)
                     loss = outputs.loss
                     total_val_loss += loss.item()
-                for i, val_batch in enumerate(val_dataloader):
-                    if i >= 10:
-                        break
-
+                for val_batch in val_dataloader:
                     input_ids = val_batch['input_ids'].to(device)
                     attention_mask = val_batch['attention_mask'].to(device)
                     labels = val_batch['labels'].to(device)
-
-                    input_text = tokenizer.decode(input_ids[0], skip_special_tokens=True)
-                    label_text = tokenizer.decode(labels[0], skip_special_tokens=True)
-
+                    
                     outputs = model.generate(input_ids, attention_mask=attention_mask, max_length=128)
-                    generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-
-                    print(f"Inpu: {input_text}")
-                    print(f"Gold: {label_text}")
-                    print(f"Pred: {generated_text}\n")
+                    for idx,output in enumerate(outputs):
+                        input_text = tokenizer.decode(input_ids[idx], skip_special_tokens=True)
+                        label_text = tokenizer.decode(labels[idx], skip_special_tokens=True)
+                        generated_text = tokenizer.decode(outputs[idx], skip_special_tokens=True)
+                        print(f"Inpu: {input_text}")
+                        print(f"Gold: {label_text}")
+                        print(f"Pred: {generated_text}\n")
 
             avg_val_loss = total_val_loss / len(val_dataloader)
             print(f"Validation Loss: {avg_val_loss}")
+            wandb.log({"Average Val Loss": avg_val_loss,  "step": step})
+            
 
             model.train()
 
     avg_train_loss = total_train_loss / len(train_dataloader)
     print(f"Epoch {epoch + 1} completed. Average Training Loss: {avg_train_loss}")
+    wandb.log({"Average Val Loss": avg_val_loss,  "Epoch": epoch + 1})
+wandb.finish()
